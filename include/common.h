@@ -58,7 +58,7 @@ struct gps_signal {
     int differential_station_id;
 
     ~gps_signal() {
-        cout << "now delete generated signal memory" << endl;
+        // cout << "now delete generated signal memory" << endl;
         delete t;
         delete latitude;
         delete longitude;

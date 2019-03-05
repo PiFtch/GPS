@@ -78,13 +78,13 @@ void gen_message(char *buf, gps_signal *signal) {
     char temp[10];
     double minute;
     minute = signal->latitude->minute + signal->latitude->second / 60.0;
-    sprintf(cstr, "$GPGGA,%02d%02d%02d.%03d,%02d%07.4lf,%c,%02d%07.4lf,%c,%01d,%02d,%.1lf,%.1lf,M,", signal->t->hour, signal->t->minute, signal->t->second, signal->t->millisecond, signal->latitude->degree, minute, signal->latitude->hemisphere, signal->longitude->degree,(double)signal->longitude->minute+signal->longitude->second/60.0, signal->longitude->hemisphere, signal->state, signal->satellite_count, signal->hdop,signal->altitude);
+    sprintf(cstr, "$GPGGA,%02d%02d%02d.%03d,%02d%07.4lf,%c,%02d%07.4lf,%c,%01d,%02d,%.1lf,%.1lf,M,VALUE10,M,VALUE11,VALUE12*HH\n", signal->t->hour, signal->t->minute, signal->t->second, signal->t->millisecond, signal->latitude->degree, minute, signal->latitude->hemisphere, signal->longitude->degree,(double)signal->longitude->minute+signal->longitude->second/60.0, signal->longitude->hemisphere, signal->state, signal->satellite_count, signal->hdop,signal->altitude);
 
     strcpy(buf, cstr);
 }
 
-void get_gps_signal(char *buf) {
-    gps_signal sig;
+void get_gps_signal(char *buf, gps_signal& sig) {
+    // gps_signal sig;
     memset(&sig, 0, sizeof(sig));
     sgngen(&sig);
     gen_message(buf, &sig);

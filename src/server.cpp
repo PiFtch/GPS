@@ -15,8 +15,9 @@ thread server_thread[10];
 SOCKET ClientSockets[10];
 
 int handle(SOCKET ClientSocket, int i) {
-    char filename[10];
-    itoa(i, filename, 10);
+    char filename[20] = "log/";
+    char temp[4];
+    strcat(filename, itoa(i, temp, 10));
     fstream file;
     file.open(filename, fstream::out);
     // cout << "Thread id: " << this_thread::get_id() << endl;
@@ -33,7 +34,7 @@ int handle(SOCKET ClientSocket, int i) {
             printf("Bytes received: %d\n", iResult);
 
             file << "Bytes received: " << iResult << endl;
-
+/*
             // Echo the buffer back to the sender
             iSendResult = send(ClientSocket, recvbuf, iResult, 0);
             if (iSendResult == SOCKET_ERROR) {
@@ -45,7 +46,7 @@ int handle(SOCKET ClientSocket, int i) {
             printf("Bytes sent: %d\n", iSendResult);
 
             file << "Bytes sent: " << iSendResult << endl;
-
+*/
         } else if (iResult == 0)
             printf("Connection closing...\n");
         else {
@@ -136,6 +137,13 @@ int main(int argc, char *argv[]) {
         thread t(handle, ClientSockets[i], i);
         t.detach();
     }
+    char op;
+    while (true) {
+        cout << "Select a client to send command." << endl;
+        cin >> op;
+
+    }
+
     WSACleanup();
     return 0;
 }
