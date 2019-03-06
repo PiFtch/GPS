@@ -16,4 +16,4 @@ target:
 	g++ src/client.cpp src/sgngen.cpp -o debug/client.exe -std=c++11 -lwsock32 -lws2_32
 
 clean:
-	rm build/* debug/*
+	rm build/* debug/* log/*

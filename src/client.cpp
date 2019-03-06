@@ -19,7 +19,7 @@ using namespace std;
 #define DEFAULT_BUFLEN 512
 #define DEFAULT_PORT "27015"
 #define MAXCLIENT 10
-const char *SERVER_NAME = "piftch-laptop";
+char *SERVER_NAME = "piftch-laptop";
 
 extern void get_gps_signal(char *buf, gps_signal& sig);
 extern void gen_message(char *buf, gps_signal *signal);
@@ -32,41 +32,16 @@ HANDLE flag_mutex[MAXCLIENT] = {NULL};
 bool used[MAXCLIENT] = {false};     // max number of client thread
 HANDLE used_mutex = NULL;
 
-int Client(int argc, char **argv, int index) {
+void makeSocket(SOCKET& ConnectSocket, char *server_name) {
     WSADATA wsaData;
-    SOCKET ConnectSocket = INVALID_SOCKET;
     struct addrinfo *result = NULL,
                     *ptr = NULL,
                     hints;
-
-    // char *sendbuf = "this is a test";
-    char sendbuf[DEFAULT_BUFLEN];
-    char recvbuf[DEFAULT_BUFLEN];
-
-    WaitForSingleObject(flag_mutex[index], INFINITE);
-    if (!flag[index]) {
-        get_gps_signal(sendbuf, sig[index]);
-    } else {
-        // flag 为true，不随机生成而是直接发送
-        gen_message(sendbuf, &sig[index]);
-        flag[index] = false;
-    }
-    ReleaseMutex(flag_mutex[index]);
-
     int iResult;
-    int recvbuflen = DEFAULT_BUFLEN;
-    
-    // Validate the parameters
-    if (argc != 2) {
-        printf("usage: %s server-name\n", argv[0]);
-        return 1;
-    }
-
-    // Initialize Winsock
     iResult = WSAStartup(MAKEWORD(2,2), &wsaData);
     if (iResult != 0) {
         printf("WSAStartup failed with error: %d\n", iResult);
-        return 1;
+        exit(1);
     }
 
     ZeroMemory( &hints, sizeof(hints) );
@@ -74,15 +49,13 @@ int Client(int argc, char **argv, int index) {
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_protocol = IPPROTO_TCP;
 
-    // Resolve the server address and port
-    iResult = getaddrinfo(argv[1], DEFAULT_PORT, &hints, &result);
+    iResult = getaddrinfo(server_name, DEFAULT_PORT, &hints, &result);
     if ( iResult != 0 ) {
         printf("getaddrinfo failed with error: %d\n", iResult);
         WSACleanup();
-        return 1;
+        exit(1);
     }
 
-    // Attempt to connect to an address until one succeeds
     for(ptr=result; ptr != NULL ;ptr=ptr->ai_next) {
 
         // Create a SOCKET for connecting to server
@@ -91,7 +64,7 @@ int Client(int argc, char **argv, int index) {
         if (ConnectSocket == INVALID_SOCKET) {
             printf("socket failed with error: %ld\n", WSAGetLastError());
             WSACleanup();
-            return 1;
+            exit(1);
         }
 
         // Connect to server.
@@ -105,6 +78,34 @@ int Client(int argc, char **argv, int index) {
     }
 
     freeaddrinfo(result);
+}
+
+int Client(int argc, char **argv, int index) {
+    SOCKET ConnectSocket = INVALID_SOCKET;
+    makeSocket(ConnectSocket, SERVER_NAME);
+
+    // char *sendbuf = "this is a test";
+    char sendbuf[DEFAULT_BUFLEN];
+    char recvbuf[DEFAULT_BUFLEN];
+/*
+    WaitForSingleObject(flag_mutex[index], INFINITE);
+    if (!flag[index]) {
+        get_gps_signal(sendbuf, sig[index]);
+    } else {
+        // flag 为true，不随机生成而是直接发送
+        gen_message(sendbuf, &sig[index]);
+        flag[index] = false;
+    }
+    ReleaseMutex(flag_mutex[index]);
+*/
+    int iResult;
+    int recvbuflen = DEFAULT_BUFLEN;
+    
+    // Validate the parameters
+    if (argc != 2) {
+        printf("usage: %s server-name\n", argv[0]);
+        return 1;
+    }
 
     if (ConnectSocket == INVALID_SOCKET) {
         printf("Unable to connect to server!\n");
@@ -112,6 +113,55 @@ int Client(int argc, char **argv, int index) {
         return 1;
     }
 
+    while (true) {
+        WaitForSingleObject(flag_mutex[index], INFINITE);
+        if (!flag[index]) {
+            get_gps_signal(sendbuf, sig[index]);
+        } else {
+            // flag 为true，不随机生成而是直接发送
+            gen_message(sendbuf, &sig[index]);
+            flag[index] = false;
+        }
+        ReleaseMutex(flag_mutex[index]);
+
+        iResult = send(ConnectSocket, sendbuf, (int)strlen(sendbuf), 0);
+        if (iResult == SOCKET_ERROR) {
+            printf("send failed with error: %d\n", WSAGetLastError());
+            closesocket(ConnectSocket);
+            WSACleanup();
+            return 1;    
+        }
+
+        this_thread::sleep_for(chrono::milliseconds(1000));
+
+        // try to receive data from server
+        iResult = recv(ConnectSocket, recvbuf, recvbuflen, 0);
+        if (iResult > 0) {
+            // process received data
+            int op = atoi(recvbuf);
+            cout << "receive: " << op << endl;
+            switch (op)
+            {
+                case 0:
+                    // CONTINUE
+                    break;
+                case 1:
+                    // Quit
+                    closesocket(ConnectSocket);
+                    WSACleanup();
+
+                    WaitForSingleObject(used_mutex, INFINITE);
+                    used[index] = false;
+                    ReleaseMutex(used_mutex);
+                    return 0;
+                    break;
+                default:
+                    break;
+            }
+        }
+    }
+    
+    /*
     // Send an initial buffer
     for (int i = 1; i <= 10; i++) {
     iResult = send( ConnectSocket, sendbuf, (int)strlen(sendbuf), 0 );
@@ -140,15 +190,15 @@ int Client(int argc, char **argv, int index) {
     // Receive until the peer closes the connection
     do {
         iResult = recv(ConnectSocket, recvbuf, recvbuflen, 0);
-        if ( iResult > 0 ) ;
-            // printf("Bytes received: %d\n", iResult);
+        if ( iResult > 0 )
+            printf("Bytes received: %d\n", iResult);
         else if ( iResult == 0 );
             // printf("Connection closed\n");
         else ;
             // printf("recv failed with error: %d\n", WSAGetLastError());
 
     } while( iResult > 0 );
-
+    */
     // cleanup
     closesocket(ConnectSocket);
     WSACleanup();
