@@ -1,5 +1,6 @@
 #define WIN32_LEAN_AND_MEAN
 #include "../include/common.h"
+// #include "../include/huffman.h"
 #include <windows.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -16,16 +17,18 @@ using namespace std;
 #pragma comment (lib, "AdvApi32.lib")
 
 
-#define DEFAULT_BUFLEN 512
+#define DEFAULT_BUFLEN 4096
 #define DEFAULT_PORT "27015"
 #define MAXCLIENT 10
 char *SERVER_NAME = "piftch-laptop";
 
 extern void get_gps_signal(char *buf, gps_signal& sig);
 extern void gen_message(char *buf, gps_signal *signal);
-
+extern int compressedSizeUlong(char *srcbuf, int len);
+extern void encode(unsigned long *dstbuf);
 // memory
 gps_signal sig[MAXCLIENT];
+HANDLE sig_mutex[MAXCLIENT];
 bool flag[MAXCLIENT] = {false};
 HANDLE flag_mutex[MAXCLIENT] = {NULL};
 
@@ -84,20 +87,9 @@ int Client(int argc, char **argv, int index) {
     SOCKET ConnectSocket = INVALID_SOCKET;
     makeSocket(ConnectSocket, SERVER_NAME);
 
-    // char *sendbuf = "this is a test";
     char sendbuf[DEFAULT_BUFLEN];
     char recvbuf[DEFAULT_BUFLEN];
-/*
-    WaitForSingleObject(flag_mutex[index], INFINITE);
-    if (!flag[index]) {
-        get_gps_signal(sendbuf, sig[index]);
-    } else {
-        // flag 为true，不随机生成而是直接发送
-        gen_message(sendbuf, &sig[index]);
-        flag[index] = false;
-    }
-    ReleaseMutex(flag_mutex[index]);
-*/
+    char compressed[DEFAULT_BUFLEN];
     int iResult;
     int recvbuflen = DEFAULT_BUFLEN;
     
@@ -124,6 +116,16 @@ int Client(int argc, char **argv, int index) {
         }
         ReleaseMutex(flag_mutex[index]);
 
+        int length = compressedSizeUlong(sendbuf, strlen(sendbuf));
+        unsigned long *compressed = new unsigned long[length];
+        encode(compressed);
+        string temp("");
+        for (int i = 0; i < length; i++) {
+            for (int j = 0; j < 4; j++) {
+                sprintf(sendbuf + strlen(sendbuf), "%c", ((char *)compressed) + i * 4 + j);
+            }
+        }
+
         iResult = send(ConnectSocket, sendbuf, (int)strlen(sendbuf), 0);
         if (iResult == SOCKET_ERROR) {
             printf("send failed with error: %d\n", WSAGetLastError());
@@ -139,7 +141,7 @@ int Client(int argc, char **argv, int index) {
         if (iResult > 0) {
             // process received data
             int op = atoi(recvbuf);
-            cout << "receive: " << op << endl;
+            // cout << "receive: " << op << endl;
             switch (op)
             {
                 case 0:
@@ -161,44 +163,6 @@ int Client(int argc, char **argv, int index) {
         }
     }
     
-    /*
-    // Send an initial buffer
-    for (int i = 1; i <= 10; i++) {
-    iResult = send( ConnectSocket, sendbuf, (int)strlen(sendbuf), 0 );
-    if (iResult == SOCKET_ERROR) {
-        printf("send failed with error: %d\n", WSAGetLastError());
-        closesocket(ConnectSocket);
-        WSACleanup();
-        return 1;
-    }
-    
-    // cout << "Thread id: " << this_thread::get_id() << ' ';
-    this_thread::sleep_for(chrono::microseconds(100));
-    // printf("Bytes Sent: %ld\n", iResult);
-    this_thread::sleep_for(chrono::milliseconds(2000));
-    }
-
-    // shutdown the connection since no more data will be sent
-    iResult = shutdown(ConnectSocket, SD_SEND);
-    if (iResult == SOCKET_ERROR) {
-        printf("shutdown failed with error: %d\n", WSAGetLastError());
-        closesocket(ConnectSocket);
-        WSACleanup();
-        return 1;
-    }
-
-    // Receive until the peer closes the connection
-    do {
-        iResult = recv(ConnectSocket, recvbuf, recvbuflen, 0);
-        if ( iResult > 0 )
-            printf("Bytes received: %d\n", iResult);
-        else if ( iResult == 0 );
-            // printf("Connection closed\n");
-        else ;
-            // printf("recv failed with error: %d\n", WSAGetLastError());
-
-    } while( iResult > 0 );
-    */
     // cleanup
     closesocket(ConnectSocket);
     WSACleanup();
@@ -210,7 +174,7 @@ int Client(int argc, char **argv, int index) {
 
 int main(int argc, char **argv) 
 {
-    // sem = CreateSemaphore()
+    // Initialize mutex handles
     used_mutex = CreateMutex(NULL, false, "used_mutex");
     for (int i = 0; i < MAXCLIENT; i++) {
         flag_mutex[i] = CreateMutex(NULL, false, "flag_mutex");
@@ -264,17 +228,22 @@ int main(int argc, char **argv)
                 continue;
             } else {
                 // start modify
-
+                int hour, minute, second, millisecond;
+                int hemi, d, m, s;
+                int hemi1, d1, m1, s1;
+                cout << "enter hour minute seond millisecond" << endl;
+                cin >> hour >> minute >> second >> millisecond;
+                cout << "enter latitude: degree minute second hemisphere(0/1)" << endl;
+                cin >> d >> m >> s >> hemi;
+                cout << "enter longitude: degree minute second hemisphere(0/1)" << endl;
+                cin >> d1 >> m1 >> s1 >> hemi1;
+                WaitForSingleObject(flag_mutex[index], INFINITE);
+                flag[index] = true;
+                sig[index].t = new Time(hour, minute, second, millisecond);
+                sig[index].latitude = new Latitude(hemi, d, m, s);
+                sig[index].longitude = new Longitude(hemi1, d1, m1, s1);
+                ReleaseMutex(flag_mutex[index]);
             }
         }
     }
-/*
-    if (op == 1) {
-        thread thread_client(Client, argc, argv);
-        thread thread2(Client, argc, argv);
-        thread_client.join();
-        
-        thread2.join();
-    }
-*/
 }

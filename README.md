@@ -22,3 +22,12 @@ Main创建线程时遍历used找空位，有空创建线程
 主线程修改时置flag为1
 
 Server端
+
+
+
+Huffman
+先计算各字符权重
+构造huffman树
+遍历一下得到hashtable
+压缩字符串
+hashtable、压缩内容一并发送

@@ -1,6 +1,6 @@
 #include <WinSock2.h>
 #include <Windows.h>
-
+#include "../include/common.h"
 #include <WS2tcpip.h>
 #pragma comment(lib, "Ws2_32.lib")
 
@@ -11,7 +11,7 @@
 using namespace std;
 
 #define DEFAULT_PORT "27015"
-#define DEFAULT_BUFLEN 512
+#define DEFAULT_BUFLEN 4096
 
 /*****MESSAGE*****/
 #define CONTINUE_TRANSIMISSION 0
@@ -23,16 +23,23 @@ char *command[3] = {"0",
 
 #define MAX_CONNECTION 20
 
+extern Node* resolve(char *buf);
+Node *First[MAX_CONNECTION];
+
 bool used[MAX_CONNECTION] = {false};
 HANDLE used_mutex = NULL;
 
-char message[MAX_CONNECTION] = {0};
+char message[MAX_CONNECTION] = {'0'};
 HANDLE message_mutex[MAX_CONNECTION];
 
 thread server_thread[10];
 SOCKET ClientSockets[MAX_CONNECTION];
 
 int handle(SOCKET ClientSocket, int index) {
+    Node *first = new Node();
+    Node *p = first;
+    Node *current;
+
     sockaddr_in temp;
     int len = sizeof(temp);
     getsockname(ClientSocket, (sockaddr *)&temp, &len);
@@ -41,8 +48,14 @@ int handle(SOCKET ClientSocket, int index) {
     
     char tempaddr[40];
     strcat(filename, itoa(temp.sin_addr.S_un.S_addr, tempaddr, 10));
-    fstream file;
+    strcat(filename, "-");
+    
+    strcat(filename, itoa(temp.sin_port, tempaddr, 10));
+    cout << "filename: " << filename << endl;
+    fstream file, fileResolve;
     file.open(filename, fstream::out);
+    strcat(filename, " Resolve");
+    fileResolve.open(filename, fstream::out);
     file << "family: " << temp.sin_family << " address: " << temp.sin_addr.S_un.S_addr << ':' << temp.sin_port << endl;
     
     int iResult;
@@ -57,8 +70,16 @@ int handle(SOCKET ClientSocket, int index) {
         if (iResult > 0) {
             // printf("Bytes received: %d\n", iResult);
             file << "Bytes received: " << iResult << endl;
+            file << recvbuf << endl;
             // Echo the command to the sender
-            strcat(sendbuf, &message[index]);
+            // strcat(sendbuf, &message[index]);
+            current = resolve(recvbuf);
+            p->next = current;
+            p = current;
+            fileResolve << current->t.hour << ':' << current->t.minute << ':' << current->t.second << ':' << current->t.millisecond << ','
+                        << current->latitude.degree << "°" << current->latitude.minute << "'" << current->latitude.second << "\"" << current->latitude.hemisphere << ','
+                        << current->longitude.degree << "°" << current->longitude.minute << "'" << current->longitude.second << "\"" << current->longitude.hemisphere << endl;
+
             iSendResult = send(ClientSocket, &message[index], 1, 0);
             if (iSendResult == SOCKET_ERROR) {
                 printf("send failed: %d\n", WSAGetLastError());
@@ -69,9 +90,10 @@ int handle(SOCKET ClientSocket, int index) {
                 ReleaseMutex(used_mutex);
                 return 1;
             }
-            printf("Bytes sent: %d\n", iSendResult);
+            // printf("Bytes sent: %d\n", iSendResult);
+            file << "Message sent: " << message[index] << endl;
             message[index] = '0';
-            file << "Bytes sent: " << iSendResult << endl;
+            // file << "Bytes sent: " << iSendResult << endl;
 
         } else if (iResult == 0)
             printf("Connection closing...\n");
@@ -79,12 +101,8 @@ int handle(SOCKET ClientSocket, int index) {
             printf("recv failed: %d\n", WSAGetLastError());
             closesocket(ClientSocket);
             WSACleanup();
-            WaitForSingleObject(used_mutex, INFINITE);
-            used[index] = false;
-            ReleaseMutex(used_mutex);
             return 1;
         }
-
     } while (iResult > 0);
 
     // shutdown the connection since we're done
@@ -98,6 +116,8 @@ int handle(SOCKET ClientSocket, int index) {
 
     // cleanup
     file.close();
+    fileResolve.close();
+    First[index] = first;
     closesocket(ClientSocket);
     WaitForSingleObject(used_mutex, INFINITE);
     used[index] = false;
@@ -161,15 +181,15 @@ void monitor() {
         if (op == 'r') {
             cout << "Connection slots:" << endl;
             for (int i = 0; i < MAX_CONNECTION; i++) {
-                printf("%03d", i);
+                printf("% 3d", i);
             }
             cout << endl;
             WaitForSingleObject(used_mutex, INFINITE);
             for (int i = 0; i < MAX_CONNECTION; i++) {
                 if (used[i]) {
-                    printf("%03c", '+');
+                    printf("% 3c", '+');
                 } else {
-                    printf("%03c", '-');
+                    printf("% 3c", '-');
                 }
             }
             ReleaseMutex(used_mutex);
@@ -177,7 +197,7 @@ void monitor() {
         } else if (op == 'm') {
             cout << "Select a client to send command." << endl;
             for (int i = 0; i < MAX_CONNECTION; i++) {
-                printf("%03d", i);
+                printf("%3d", i);
             }
             cout << endl;
             WaitForSingleObject(used_mutex, INFINITE);
@@ -204,22 +224,6 @@ void monitor() {
                 ReleaseMutex(message_mutex[index]);
             }
         }
-        
-        for (int i = 0; i < MAX_CONNECTION; i++) {
-            printf("%03d", i);
-        }
-        cout << endl;
-        WaitForSingleObject(used_mutex, INFINITE);
-        for (int i = 0; i < MAX_CONNECTION; i++) {
-            if (used[i]) {
-                printf("%03c", '+');
-            } else {
-                printf("%03c", '-');
-            }
-        }
-        ReleaseMutex(used_mutex);
-        cout << endl;
-        
     }
 
 }
@@ -242,14 +246,6 @@ int main(int argc, char *argv[]) {
     monitor_thread.detach();
 
     while (true) {
-        /*
-        if ((ClientSockets[i] = accept(ListenSocket, NULL, NULL)) == INVALID_SOCKET){
-            printf("accept failed: %d\n", WSAGetLastError());
-            closesocket(ListenSocket);
-            WSACleanup();
-            return 1;
-        }
-        */
         SOCKET tempSOCKET = accept(ListenSocket, NULL, NULL);
         if (tempSOCKET == INVALID_SOCKET) {
             printf("accept failed: %d\n", WSAGetLastError());
@@ -271,41 +267,9 @@ int main(int argc, char *argv[]) {
             cout << "no available slot." << endl;
             continue;
         }
-        /*
-        if (accept(ListenSocket, NULL, NULL) == INVALID_SOCKET){
-            printf("accept failed: %d\n", WSAGetLastError());
-            closesocket(ListenSocket);
-            WSACleanup();
-            return 1;
-        }
-        */
-        /*
-        sockaddr_in temp;
-        int len = sizeof(temp);
-        getsockname(ClientSockets[i], (sockaddr *)&temp, &len);
-        cout << temp.sin_family << ' ' << temp.sin_addr.S_un.S_addr << ':' << temp.sin_port << endl;
-        */
         thread t(handle, tempSOCKET, index);
         t.detach();
     }
-    /*
-    if ((ClientSockets[i] = accept(ListenSocket, NULL, NULL)) == INVALID_SOCKET){
-        printf("accept failed: %d\n", WSAGetLastError());
-        closesocket(ListenSocket);
-        WSACleanup();
-        return 1;
-    }
-    */
-    /*
-    char op;
-    while (true) {
-        cout << "GPS Server." << endl;
-        cout << "Options:" << endl;
-        cout << "Select a client to send command." << endl;
-        cin >> op;
-
-    }
-    */
     WSACleanup();
     return 0;
 }

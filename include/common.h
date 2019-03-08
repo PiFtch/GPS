@@ -65,4 +65,22 @@ struct gps_signal {
     }
 };
 
+// definition of Node
+struct Node {
+    Time t;
+    Latitude latitude;
+    Longitude longitude;
+    Node* next;
+
+    Node(Time ti, Latitude la, Longitude lo, Node* ne) :
+    t(ti), latitude(la), longitude(lo), next(ne) { }
+
+    Node(Time ti, Latitude la, Longitude lo) :
+    Node(ti, la, lo, NULL) { }
+
+    Node() {
+        next = NULL;
+    }
+};
+
 #endif

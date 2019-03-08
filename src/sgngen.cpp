@@ -89,6 +89,59 @@ void get_gps_signal(char *buf, gps_signal& sig) {
     sgngen(&sig);
     gen_message(buf, &sig);
 }
+
+// used by resolve
+int charToNum(char ch) {
+    return (ch >= '0' && ch <= '9') ? (ch - '0') : 0;
+}
+
+// definition of resolve
+Node* resolve(char *buf) {
+    // Node* node = (Node*)malloc(sizeof(node));
+    Node *node = new Node;
+    int count = 0;
+    string str(buf);
+    string delimiter(",");
+    string token;
+    size_t pos;
+
+    char hemi;
+    int degree;
+    int minute;
+    int second;
+
+    while (count <= 5 && (pos = str.find(delimiter)) != string::npos) {
+        token = str.substr(0, pos);
+        if (count == 1) {
+            int hour = charToNum(token[0])*10 + charToNum(token[1]);
+            int minute = charToNum(token[2])*10 + charToNum(token[3]);
+            int second = charToNum(token[4])*10 + charToNum(token[5]);
+            int millisecond = charToNum(token[7])*100 + charToNum(token[8])*10
+                + charToNum(token[9]);
+            node->t = Time(hour, minute, second, millisecond);
+        } else if (count == 2) {
+            degree = charToNum(token[0])*10 + charToNum(token[1]);
+            minute = charToNum(token[2])*10 + charToNum(token[3]);
+            double total_minute = stod(token);
+            second = (int)((total_minute-minute)*60.0);
+        } else if (count == 3) {
+            char hemi = token[0];
+            node->latitude = Latitude(hemi, degree, minute, second);
+        } else if (count == 4) {
+            degree = charToNum(token[0])*10 + charToNum(token[1]);
+            minute = charToNum(token[2])*10 + charToNum(token[3]);
+            double total_minute = stod(token);
+            second = (int)((total_minute-minute)*60.0);
+        } else if (count == 5) {
+            char hemi = token[0];
+            node->longitude = Longitude(hemi, degree, minute, second);
+        }
+
+        str.erase(0, pos + delimiter.length());
+        count++;
+    }
+    return node;
+}
 /*
 int main() {
     gps_signal sig;
